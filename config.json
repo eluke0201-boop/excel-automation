@@ -1,0 +1,53 @@
+{
+  "_comment": "受注データ統合ツールの設定ファイル。各プラットフォームのCSV列名を自由にカスタマイズできます。新しいプラットフォーム（Yahoo!ショッピング・minne・Shopify等）を追加するときも、ここに1ブロック追加するだけで対応可能。",
+
+  "platforms": {
+    "rakuten": {
+      "filename_prefix": "rakuten",
+      "label": "楽天市場",
+      "columns": {
+        "注文番号": "注文番号",
+        "注文日": "注文日",
+        "商品名": "商品名",
+        "個数": "個数",
+        "金額": "金額"
+      }
+    },
+
+    "amazon": {
+      "filename_prefix": "amazon",
+      "label": "Amazon",
+      "columns": {
+        "order-id": "注文番号",
+        "purchase-date": "注文日",
+        "product-name": "商品名",
+        "quantity": "個数",
+        "item-total": "金額"
+      },
+      "product_name_translation": {
+        "Natural Stone Pierced Earrings Rose Quartz": "天然石ピアス（ローズクォーツ）",
+        "Natural Stone Pierced Earrings Amethyst": "天然石ピアス（アメジスト）",
+        "Silver Chain Necklace": "シルバーチェーンネックレス",
+        "14kgf Pearl Necklace": "14kgf一粒淡水パールネックレス",
+        "Leather Bracelet": "レザーブレスレット",
+        "Natural Stone Bracelet Turquoise": "天然石ブレスレット（ターコイズ）",
+        "Silver Ring Simple": "シルバーリング（シンプル）",
+        "Natural Stone Ring Garnet": "天然石リング（ガーネット）",
+        "Hair Barrette Marble Pattern": "バレッタ（大理石柄）",
+        "Hair Clip Pearl": "ヘアクリップ（パール）"
+      }
+    },
+
+    "base": {
+      "filename_prefix": "base",
+      "label": "自社BASE",
+      "columns": {
+        "order_number": "注文番号",
+        "order_date": "注文日",
+        "item_name": "商品名",
+        "qty": "個数",
+        "total_price": "金額"
+      }
+    }
+  }
+}

@@ -1,29 +1,32 @@
 """
 EC事業者向け 受注データ統合・集計ツール
 
-複数プラットフォーム（楽天市場・Amazon・自社BASE）から出力された
+複数プラットフォーム（楽天市場・Amazon・自社BASE等）から出力された
 受注CSVを自動で統合し、商品別・プラットフォーム別の集計レポートを
 グラフ付きのExcelで出力する。
 
 使い方:
-    python merge_reports.py <入力フォルダ> <出力ファイル名>
+    python merge_reports.py <入力フォルダ> <出力ファイル名> [--config <設定ファイル>]
 
 例:
     python merge_reports.py ./sample_data ./output.xlsx
+    python merge_reports.py ./sample_data ./output.xlsx --config my_config.json
 
 ファイル名規則:
-    rakuten_*.csv  → 楽天市場形式として読み込み
-    amazon_*.csv   → Amazon形式として読み込み（商品名は日本語に変換）
-    base_*.csv     → 自社BASE形式として読み込み
+    各プラットフォームのCSVは、設定ファイルで指定した filename_prefix で
+    始まるファイル名にしてください。デフォルトでは:
+        rakuten_*.csv  → 楽天市場形式
+        amazon_*.csv   → Amazon形式（商品名は日本語に変換）
+        base_*.csv     → 自社BASE形式
 
-機能:
-    - 各プラットフォームの列名のゆれを統一スキーマに変換
-    - Amazon英語商品名を日本語に自動マッピング
-    - 重複行の自動削除
-    - 「全注文」「商品別集計」「プラットフォーム別集計」「日別売上推移」シート出力
-    - 商品別売上の棒グラフをExcelに埋め込み
+設定ファイル（config.json）:
+    各プラットフォームの列名マッピング・商品名翻訳辞書を
+    JSONで自由にカスタマイズ可能。新しいプラットフォームを追加するときも、
+    config.json に1ブロック追加するだけで対応可能。
 """
 
+import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -36,97 +39,77 @@ from openpyxl import load_workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.styles import Font, PatternFill, Alignment
 
-# ============================================================
-# プラットフォーム別の列名マッピング
-# 各プラットフォームの列名 → 統一スキーマ
-# ============================================================
-
-PLATFORM_COLUMN_MAPS = {
-    "rakuten": {
-        "注文番号": "注文番号",
-        "注文日": "注文日",
-        "商品名": "商品名",
-        "個数": "個数",
-        "金額": "金額",
-    },
-    "amazon": {
-        "order-id": "注文番号",
-        "purchase-date": "注文日",
-        "product-name": "商品名",
-        "quantity": "個数",
-        "item-total": "金額",
-    },
-    "base": {
-        "order_number": "注文番号",
-        "order_date": "注文日",
-        "item_name": "商品名",
-        "qty": "個数",
-        "total_price": "金額",
-    },
-}
-
-# ============================================================
-# Amazon英語商品名 → 日本語商品名のマッピング
-# 商品別集計のために統一する
-# ============================================================
-
-AMAZON_PRODUCT_NAME_MAP = {
-    "Natural Stone Pierced Earrings Rose Quartz": "天然石ピアス（ローズクォーツ）",
-    "Natural Stone Pierced Earrings Amethyst": "天然石ピアス（アメジスト）",
-    "Silver Chain Necklace": "シルバーチェーンネックレス",
-    "14kgf Pearl Necklace": "14kgf一粒淡水パールネックレス",
-    "Leather Bracelet": "レザーブレスレット",
-    "Natural Stone Bracelet Turquoise": "天然石ブレスレット（ターコイズ）",
-    "Silver Ring Simple": "シルバーリング（シンプル）",
-    "Natural Stone Ring Garnet": "天然石リング（ガーネット）",
-    "Hair Barrette Marble Pattern": "バレッタ（大理石柄）",
-    "Hair Clip Pearl": "ヘアクリップ（パール）",
-}
-
-PLATFORM_LABEL = {
-    "rakuten": "楽天市場",
-    "amazon": "Amazon",
-    "base": "自社BASE",
-}
 
 CANONICAL_COLUMNS = ["注文番号", "注文日", "商品名", "個数", "金額", "プラットフォーム"]
 
 
-def detect_platform(filename: str) -> str | None:
+def load_config(config_path: Path) -> dict:
+    """設定ファイル（JSON）を読み込んでバリデーション。"""
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"設定ファイルが見つかりません: {config_path}\n"
+            "プロジェクトルートに config.json を配置してください。"
+        )
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    if "platforms" not in config:
+        raise ValueError("設定ファイルに 'platforms' キーがありません。")
+
+    for key, platform in config["platforms"].items():
+        if "filename_prefix" not in platform:
+            raise ValueError(f"プラットフォーム '{key}' に 'filename_prefix' がありません。")
+        if "label" not in platform:
+            raise ValueError(f"プラットフォーム '{key}' に 'label' がありません。")
+        if "columns" not in platform:
+            raise ValueError(f"プラットフォーム '{key}' に 'columns' マッピングがありません。")
+
+    return config
+
+
+def detect_platform(filename: str, config: dict) -> str | None:
     """ファイル名先頭からプラットフォームを判定する。"""
     lower = filename.lower()
-    for key in PLATFORM_COLUMN_MAPS:
-        if lower.startswith(key):
-            return key
+    for platform_key, platform_config in config["platforms"].items():
+        if lower.startswith(platform_config["filename_prefix"].lower()):
+            return platform_key
     return None
 
 
-def load_platform_csv(file: Path, platform: str) -> pd.DataFrame:
+def load_platform_csv(file: Path, platform_key: str, config: dict) -> pd.DataFrame:
     """プラットフォーム別のCSVを読み込み、統一スキーマに変換する。"""
+    platform_config = config["platforms"][platform_key]
     df = pd.read_csv(file)
 
     # 列名を統一スキーマにリネーム
-    column_map = PLATFORM_COLUMN_MAPS[platform]
+    column_map = platform_config["columns"]
     df = df.rename(columns=column_map)
 
     # 統一スキーマに必要な列だけ残す（余分な列はカット）
     keep_columns = [c for c in column_map.values() if c in df.columns]
+    missing = [c for c in column_map.values() if c not in df.columns]
+    if missing:
+        print(f"  ⚠ 不足列（無視されます）: {missing}")
     df = df[keep_columns].copy()
 
-    # Amazonのみ: 英語商品名 → 日本語に変換
-    if platform == "amazon":
-        df["商品名"] = df["商品名"].map(AMAZON_PRODUCT_NAME_MAP).fillna(df["商品名"])
+    # 商品名の翻訳テーブルがあれば適用（例: Amazonの英語 → 日本語）
+    if "product_name_translation" in platform_config and "商品名" in df.columns:
+        translation = platform_config["product_name_translation"]
+        df["商品名"] = df["商品名"].map(translation).fillna(df["商品名"])
 
     # 注文日をdatetime型に統一（文字列でもパースして揃える）
-    df["注文日"] = pd.to_datetime(df["注文日"]).dt.strftime("%Y-%m-%d")
+    if "注文日" in df.columns:
+        df["注文日"] = pd.to_datetime(df["注文日"]).dt.strftime("%Y-%m-%d")
 
     # プラットフォーム列を付与
-    df["プラットフォーム"] = PLATFORM_LABEL[platform]
+    df["プラットフォーム"] = platform_config["label"]
 
-    return df[CANONICAL_COLUMNS]
+    # 統一スキーマの列順に並べ替え（無い列は除外）
+    available = [c for c in CANONICAL_COLUMNS if c in df.columns]
+    return df[available]
 
 
-def load_all(folder: Path) -> pd.DataFrame:
+def load_all(folder: Path, config: dict) -> pd.DataFrame:
     """フォルダ内の対象CSVをすべて統一スキーマで読み込み、統合する。"""
     if not folder.exists() or not folder.is_dir():
         raise FileNotFoundError(f"フォルダが見つかりません: {folder}")
@@ -136,19 +119,21 @@ def load_all(folder: Path) -> pd.DataFrame:
         if file.suffix.lower() != ".csv":
             continue
 
-        platform = detect_platform(file.name)
-        if platform is None:
+        platform_key = detect_platform(file.name, config)
+        if platform_key is None:
             print(f"  ⚠ スキップ（不明な形式）: {file.name}")
             continue
 
-        print(f"  読み込み: {file.name} → {PLATFORM_LABEL[platform]} として処理")
-        df = load_platform_csv(file, platform)
+        label = config["platforms"][platform_key]["label"]
+        print(f"  読み込み: {file.name} → {label} として処理")
+        df = load_platform_csv(file, platform_key, config)
         frames.append(df)
 
     if not frames:
+        prefixes = [p["filename_prefix"] for p in config["platforms"].values()]
         raise ValueError(
             "対象CSVが見つかりませんでした。\n"
-            "ファイル名は rakuten_*.csv / amazon_*.csv / base_*.csv の形式で配置してください。"
+            f"ファイル名は次のいずれかで始まる必要があります: {prefixes}"
         )
 
     return pd.concat(frames, ignore_index=True)
@@ -216,7 +201,6 @@ def autosize_columns(ws) -> None:
             (len(str(cell.value)) for cell in column if cell.value is not None),
             default=10,
         )
-        # 日本語は1文字で約2幅扱いなので少し広めに
         ws.column_dimensions[column[0].column_letter].width = min(max_length * 1.5 + 2, 40)
 
 
@@ -234,7 +218,6 @@ def write_excel(
         platform_summary.to_excel(writer, sheet_name="プラットフォーム別集計", index=False)
         daily_summary.to_excel(writer, sheet_name="日別売上推移", index=False)
 
-    # 装飾とグラフを追加
     wb = load_workbook(output)
 
     for sheet_name in ["全注文", "商品別集計", "プラットフォーム別集計", "日別売上推移"]:
@@ -313,16 +296,35 @@ def print_summary_to_console(
     print("=" * 50)
 
 
-def main() -> None:
-    if len(sys.argv) < 3:
-        print(__doc__)
-        sys.exit(1)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="EC事業者向け 受注データ統合・集計ツール",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("input_folder", help="入力CSVが入っているフォルダ")
+    parser.add_argument("output_file", help="出力するExcelファイル名")
+    parser.add_argument(
+        "--config",
+        default="config.json",
+        help="設定ファイルのパス（既定: config.json）",
+    )
+    return parser.parse_args()
 
-    input_folder = Path(sys.argv[1])
-    output_file = Path(sys.argv[2])
+
+def main() -> None:
+    args = parse_args()
+
+    input_folder = Path(args.input_folder)
+    output_file = Path(args.output_file)
+    config_path = Path(args.config)
+
+    print(f"[0/5] 設定ファイル読み込み: {config_path}")
+    config = load_config(config_path)
+    print(f"  対応プラットフォーム: {list(config['platforms'].keys())}")
 
     print(f"[1/5] ファイル読み込み: {input_folder}")
-    df = load_all(input_folder)
+    df = load_all(input_folder, config)
     print(f"  → 合計 {len(df)} 行")
 
     print("[2/5] データクリーニング")

@@ -136,7 +136,7 @@ pip install -r requirements.txt
 
 ### ファイル名のルール
 
-入力フォルダに置くCSVのファイル名は、**先頭でプラットフォームを識別**できる形にしてください：
+入力フォルダに置くCSVのファイル名は、**先頭でプラットフォームを識別**できる形にしてください（プレフィックスは `config.json` で変更可能）：
 
 | プラットフォーム | ファイル名の例 |
 |---|---|
@@ -147,12 +147,18 @@ pip install -r requirements.txt
 ### 実行
 
 ```bash
+# 標準実行（config.json を自動で読み込み）
 python merge_reports.py ./sample_data ./output.xlsx
+
+# 別の設定ファイルを使いたい場合
+python merge_reports.py ./sample_data ./output.xlsx --config client_a_config.json
 ```
 
 実行すると、ターミナルに進行状況と集計サマリーが表示されます：
 
 ```
+[0/5] 設定ファイル読み込み: config.json
+  対応プラットフォーム: ['rakuten', 'amazon', 'base']
 [1/5] ファイル読み込み: sample_data
   読み込み: amazon_orders_202605.csv → Amazon として処理
   読み込み: base_orders_202605.csv → 自社BASE として処理
@@ -195,35 +201,83 @@ python merge_reports.py ./sample_data ./output.xlsx
 
 ---
 
+## 🔧 設定ファイルでカスタマイズ可能
+
+このツールの**柔軟性のポイント**は、列名のマッピングや商品名の変換ルールを **`config.json` という設定ファイル**で外部化していること。**コードを書き換えなくても、JSON を編集するだけで** 様々なCSV形式に対応できます。
+
+### config.json の構造
+
+```json
+{
+  "platforms": {
+    "rakuten": {
+      "filename_prefix": "rakuten",
+      "label": "楽天市場",
+      "columns": {
+        "注文番号": "注文番号",
+        "注文日": "注文日",
+        "商品名": "商品名",
+        "個数": "個数",
+        "金額": "金額"
+      }
+    },
+    "amazon": {
+      "filename_prefix": "amazon",
+      "label": "Amazon",
+      "columns": {
+        "order-id": "注文番号",
+        "purchase-date": "注文日",
+        ...
+      },
+      "product_name_translation": {
+        "Silver Chain Necklace": "シルバーチェーンネックレス",
+        ...
+      }
+    }
+  }
+}
+```
+
+### こんな時に config.json を編集すれば対応できます
+
+| シーン | 対応方法 |
+|---|---|
+| 「うちの楽天CSVは`金額`じゃなく`合計金額`」 | `"合計金額": "金額"` に書き換え |
+| 「Amazonの商品名翻訳テーブルを増やしたい」 | `product_name_translation` に追加 |
+| 「Yahoo!ショッピングのCSVも対応したい」 | `"yahoo": { ... }` ブロックを丸ごと追加 |
+| 「テスト用に別の設定で動かしたい」 | `--config my_test.json` で別ファイルを指定 |
+
+### 複数の設定を使い分けたいとき
+
+```bash
+# デフォルト（config.json）
+python merge_reports.py ./data ./output.xlsx
+
+# クライアントAの設定ファイルを使う
+python merge_reports.py ./data ./output.xlsx --config client_a_config.json
+```
+
+→ 1つのツールで複数クライアントの異なるCSV形式に対応可能。
+
+---
+
 ## 技術的なポイント
 
-### 列名のマッピングを統一スキーマで吸収
+### 設定駆動アーキテクチャ
 
-各プラットフォームの列名のゆれを、コード内のマッピング表で吸収しています。新しいプラットフォーム（minne・Yahoo!ショッピング等）を追加するときも、マッピング表に1ブロック追加するだけで対応可能です。
+列名のマッピングと商品名翻訳テーブルを `config.json` から動的に読み込むことで、コード変更ゼロで形式の異なるCSVに対応できる設計に。新しいプラットフォームを追加する場合も、JSONに1ブロック追加するだけで完結。
 
-```python
-PLATFORM_COLUMN_MAPS = {
-    "rakuten": {"注文日": "注文日", "商品名": "商品名", ...},
-    "amazon":  {"purchase-date": "注文日", "product-name": "商品名", ...},
-    "base":    {"order_date": "注文日", "item_name": "商品名", ...},
-}
-```
+### Amazonの英語商品名 → 日本語への自動変換
 
-### Amazonの英語商品名 → 日本語商品名 を自動変換
-
-Amazonは国際SKUの関係で商品名が英語になりがち。商品別に集計するには日本語名と統一する必要があるため、変換辞書で吸収しています。
-
-```python
-AMAZON_PRODUCT_NAME_MAP = {
-    "Natural Stone Pierced Earrings Rose Quartz": "天然石ピアス（ローズクォーツ）",
-    "Silver Chain Necklace": "シルバーチェーンネックレス",
-    # ...
-}
-```
+Amazonは国際SKUの関係で商品名が英語になりがち。商品別に集計するには日本語名と統一する必要があるため、`product_name_translation` 辞書を使って吸収。クライアントの商品ラインナップに応じて、この辞書もJSONで自由に拡張可能。
 
 ### 重複注文の自動削除
 
 同じ月内のCSVを誤って2回エクスポートしてしまった場合などに備え、`注文番号`をキーに重複を自動削除します。
+
+### ファイル名先頭でプラットフォーム自動判別
+
+`rakuten_*.csv`、`amazon_*.csv` のように、ファイル名の prefix で形式を判別。手動でプラットフォームを指定する必要なし。`filename_prefix` も config.json で変更可能（例: `r_*.csv` のような短縮名にも対応可）。
 
 ---
 
