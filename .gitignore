@@ -8,3 +8,7 @@ Thumbs.db
 
 # 内部用の進捗メモ（公開しない）
 PROGRESS.md
+
+# プレビュー画像の生成スクリプト（内部用、生成物だけ公開）
+generate_previews.py
+docs/tables.md
