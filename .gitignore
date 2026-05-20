@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+output.xlsx
+.DS_Store
+Thumbs.db
+.vscode/
+
+# 内部用の進捗メモ（公開しない）
+PROGRESS.md
