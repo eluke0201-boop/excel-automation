@@ -1,10 +1,14 @@
 .venv/
 __pycache__/
 *.pyc
-output.xlsx
 .DS_Store
 Thumbs.db
 .vscode/
+
+# 出力ファイル（実行時に生成される）
+output.xlsx
+output_*.xlsx
+統合レポート_*.xlsx
 
 # 内部用の進捗メモ（公開しない）
 PROGRESS.md
@@ -12,3 +16,6 @@ PROGRESS.md
 # プレビュー画像の生成スクリプト（内部用、生成物だけ公開）
 generate_previews.py
 docs/tables.md
+
+# Streamlit のローカル設定
+.streamlit/secrets.toml

@@ -1,6 +1,5 @@
 {
   "_comment": "受注データ統合ツールの設定ファイル。各プラットフォームのCSV列名を自由にカスタマイズできます。新しいプラットフォーム（Yahoo!ショッピング・minne・Shopify等）を追加するときも、ここに1ブロック追加するだけで対応可能。",
-
   "platforms": {
     "rakuten": {
       "filename_prefix": "rakuten",
@@ -13,7 +12,6 @@
         "金額": "金額"
       }
     },
-
     "amazon": {
       "filename_prefix": "amazon",
       "label": "Amazon",
@@ -37,7 +35,6 @@
         "Hair Clip Pearl": "ヘアクリップ（パール）"
       }
     },
-
     "base": {
       "filename_prefix": "base",
       "label": "自社BASE",
@@ -47,6 +44,50 @@
         "item_name": "商品名",
         "qty": "個数",
         "total_price": "金額"
+      }
+    },
+    "yahoo": {
+      "filename_prefix": "yahoo",
+      "label": "Yahoo!ショッピング",
+      "columns": {
+        "注文ID": "注文番号",
+        "注文日": "注文日",
+        "商品名": "商品名",
+        "数量": "個数",
+        "金額": "金額"
+      }
+    },
+    "minne": {
+      "filename_prefix": "minne",
+      "label": "minne",
+      "columns": {
+        "受注番号": "注文番号",
+        "受注日": "注文日",
+        "作品名": "商品名",
+        "個数": "個数",
+        "販売価格": "金額"
+      }
+    },
+    "creema": {
+      "filename_prefix": "creema",
+      "label": "Creema",
+      "columns": {
+        "order_no": "注文番号",
+        "order_date": "注文日",
+        "product": "商品名",
+        "qty": "個数",
+        "price": "金額"
+      }
+    },
+    "shopify": {
+      "filename_prefix": "shopify",
+      "label": "自社Shopify",
+      "columns": {
+        "Order ID": "注文番号",
+        "Order Date": "注文日",
+        "Product Name": "商品名",
+        "Quantity": "個数",
+        "Total": "金額"
       }
     }
   }
