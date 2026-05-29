@@ -36,7 +36,7 @@ def _tile_html(file_path: Path, color: str) -> str:
     <div class="sample-tile" draggable="true"
          data-filename="{file_path.name}"
          data-b64="{b64}"
-         title="{file_path.name}">
+         title="{file_path.name}（ダブルクリックで中身プレビュー）">
       <svg class="file-icon" viewBox="0 0 32 40" xmlns="http://www.w3.org/2000/svg">
         <path d="M4 2 L22 2 L30 10 L30 38 L4 38 Z"
               fill="#FFFFFF" stroke="#9CA3AF" stroke-width="1.2"
@@ -67,10 +67,11 @@ def _tile_html(file_path: Path, color: str) -> str:
 _PARENT_HELPER_JS = """
 function ensureParentHelper() {
   const pw = window.parent;
-  if (pw.__tileDropHelper) return true;
+  if (pw.__tileDropHelper && pw.__tilePreviewHelper) return true;
   try {
     const script = pw.document.createElement('script');
     script.textContent = `
+      // --- ファイルドロップ用ヘルパー ---
       window.__tileDropHelper = function(fileList, clientX, clientY, targetSelector) {
         const dz = document.querySelector(targetSelector || '[data-testid="stFileUploaderDropzone"]');
         if (!dz) return 'no-dropzone';
@@ -89,6 +90,77 @@ function ensureParentHelper() {
         dz.dispatchEvent(dropEvent);
         return 'ok:' + fileList.length;
       };
+
+      // --- CSV プレビューモーダル用ヘルパー（<dialog> + showModal でトップレイヤー表示）---
+      window.__tilePreviewHelper = function(csvText, filename) {
+        // 既存モーダルがあれば閉じる
+        const existing = document.querySelector('.tile-preview-dialog');
+        if (existing) { try { existing.close(); } catch(e) {} existing.remove(); }
+
+        function parseCsv(text) {
+          const lines = text.split(/\\\\r?\\\\n/).filter(l => l.trim().length > 0);
+          return lines.map(line => {
+            const cells = [];
+            let i = 0, inQuote = false, cur = '';
+            while (i < line.length) {
+              const c = line[i];
+              if (inQuote) {
+                if (c === '"' && line[i+1] === '"') { cur += '"'; i += 2; continue; }
+                if (c === '"') { inQuote = false; i++; continue; }
+                cur += c; i++;
+              } else {
+                if (c === '"' && cur === '') { inQuote = true; i++; continue; }
+                if (c === ',') { cells.push(cur); cur = ''; i++; continue; }
+                cur += c; i++;
+              }
+            }
+            cells.push(cur);
+            return cells;
+          });
+        }
+        function escapeHtml(s) {
+          const div = document.createElement('div');
+          div.textContent = String(s);
+          return div.innerHTML;
+        }
+
+        const rows = parseCsv(csvText);
+        if (rows.length === 0) { alert('CSV のパースに失敗しました'); return; }
+        const header = rows[0];
+        const body = rows.slice(1);
+
+        let tableHtml = '<table class="tile-preview-table"><thead><tr>';
+        for (const h of header) tableHtml += '<th>' + escapeHtml(h) + '</th>';
+        tableHtml += '</tr></thead><tbody>';
+        for (const row of body) {
+          tableHtml += '<tr>';
+          for (const c of row) tableHtml += '<td>' + escapeHtml(c) + '</td>';
+          tableHtml += '</tr>';
+        }
+        tableHtml += '</tbody></table>';
+
+        // ネイティブ <dialog> 要素 → showModal でトップレイヤーへ
+        // （Streamlit の設定ダイアログより前面に出る）
+        const dlg = document.createElement('dialog');
+        dlg.className = 'tile-preview-dialog';
+        dlg.innerHTML =
+          '<div class="tile-preview-header">' +
+            '<span class="tile-preview-filename">📄 ' + escapeHtml(filename) + '</span>' +
+            '<span class="tile-preview-meta">' + body.length + ' 行 × ' + header.length + ' 列</span>' +
+            '<button class="tile-preview-close" type="button" title="閉じる (Esc)">✕</button>' +
+          '</div>' +
+          '<div class="tile-preview-body">' + tableHtml + '</div>';
+
+        // 閉じたら DOM から削除
+        dlg.addEventListener('close', () => dlg.remove());
+        // ✕ ボタンで閉じる
+        dlg.querySelector('.tile-preview-close').addEventListener('click', () => dlg.close());
+        // 背景（::backdrop の領域）クリックで閉じる
+        dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+
+        document.body.appendChild(dlg);
+        dlg.showModal();
+      };
     `;
     pw.document.head.appendChild(script);
     return !!pw.__tileDropHelper;
@@ -96,6 +168,32 @@ function ensureParentHelper() {
     console.error('ensureParentHelper failed:', e);
     return false;
   }
+}
+
+// タイルのダブルクリックでプレビューモーダルを開く（Windows エクスプローラの「開く」と同じ感覚）
+function installPreviewHandlers() {
+  document.querySelectorAll('.sample-tile').forEach(tile => {
+    tile.addEventListener('dblclick', (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      try {
+        const b64 = tile.dataset.b64;
+        const filename = tile.dataset.filename;
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const text = new TextDecoder('utf-8').decode(bytes);
+        ensureParentHelper();
+        if (window.parent.__tilePreviewHelper) {
+          window.parent.__tilePreviewHelper(text, filename);
+        } else {
+          console.warn('__tilePreviewHelper not available');
+        }
+      } catch (e) {
+        console.error('preview failed:', e);
+      }
+    });
+  });
 }
 """
 
@@ -179,6 +277,7 @@ def render_main_sample_tiles(config: dict) -> None:
         gap: 6px;
       }}
       .sample-tile {{
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -258,7 +357,7 @@ def render_main_sample_tiles(config: dict) -> None:
       <div class="sample-section">
         <div class="section-title">
           ✅ 設定済みプラットフォーム（{len(registered_files)}件）
-          <span class="section-sub">クリックで選択 / Ctrl+クリックで複数選択 / 余白ドラッグで範囲選択 → 下のゾーンへドロップ</span>
+          <span class="section-sub">クリック=選択 / Ctrl+クリック=複数選択 / 余白ドラッグ=範囲選択 / ダブルクリック=中身プレビュー → 下のゾーンへドロップ</span>
         </div>
         <div class="tiles-container">{registered_tiles_html}</div>
       </div>
@@ -533,6 +632,9 @@ def render_main_sample_tiles(config: dict) -> None:
 
           tile.addEventListener('dragend', () => {{ setTimeout(cleanup, 100); }});
         }});
+
+        // ダブルクリックでプレビュー
+        installPreviewHandlers();
       </script>
     </body>
     </html>
@@ -604,6 +706,7 @@ def render_dialog_sample_tiles() -> None:
         align-items: center;
       }}
       .sample-tile {{
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -639,7 +742,7 @@ def render_dialog_sample_tiles() -> None:
     <body>
       <div class="dlg-panel">
         <div class="dlg-title">📁 サンプルCSV</div>
-        <div class="dlg-hint">→ ドラッグして<br/>自動推測を試す</div>
+        <div class="dlg-hint">→ ドラッグして自動推測<br/>ダブルクリックで中身プレビュー</div>
         <div class="tiles-container">{tiles_html}</div>
       </div>
       <script>
@@ -714,6 +817,9 @@ def render_dialog_sample_tiles() -> None:
 
           tile.addEventListener('dragend', () => {{ setTimeout(cleanup, 100); }});
         }});
+
+        // ダブルクリックでプレビュー
+        installPreviewHandlers();
       </script>
     </body>
     </html>

@@ -121,6 +121,104 @@ st.markdown(
         z-index: 10001;
         box-shadow: 0 2px 6px rgba(0,0,0,0.25);
     }
+    /* サンプル CSV プレビューモーダル — <dialog> + showModal でトップレイヤー表示 */
+    .tile-preview-dialog {
+        padding: 0;
+        border: none;
+        border-radius: 12px;
+        background: white;
+        box-shadow: 0 25px 50px rgba(0,0,0,0.35);
+        max-width: 1000px;
+        width: 90vw;
+        max-height: 85vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    .tile-preview-dialog::backdrop {
+        background: rgba(15, 23, 42, 0.55);
+        backdrop-filter: blur(2px);
+    }
+    .tile-preview-dialog[open] {
+        animation: tile-preview-scale-in 0.18s ease-out;
+    }
+    @keyframes tile-preview-scale-in {
+        from { transform: scale(0.96); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+    }
+    .tile-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 20px;
+        border-bottom: 1px solid #E5E7EB;
+        background: #F9FAFB;
+        flex-shrink: 0;
+    }
+    .tile-preview-filename {
+        font-weight: 700;
+        color: #1F2937;
+        font-size: 0.95rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .tile-preview-meta {
+        font-size: 0.78rem;
+        color: #6B7280;
+        margin-left: auto;
+        margin-right: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .tile-preview-close {
+        background: white;
+        border: 1px solid #D1D5DB;
+        color: #4B5563;
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.12s;
+    }
+    .tile-preview-close:hover {
+        background: #FEE2E2;
+        border-color: #FCA5A5;
+        color: #991B1B;
+    }
+    .tile-preview-body {
+        flex: 1;
+        overflow: auto;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .tile-preview-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.85rem;
+    }
+    .tile-preview-table th {
+        background: #F3F4F6;
+        font-weight: 700;
+        color: #1F2937;
+        text-align: left;
+        padding: 10px 14px;
+        border-bottom: 2px solid #D1D5DB;
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        white-space: nowrap;
+    }
+    .tile-preview-table td {
+        padding: 7px 14px;
+        border-bottom: 1px solid #F3F4F6;
+        color: #374151;
+        white-space: nowrap;
+    }
+    .tile-preview-table tbody tr:hover td {
+        background: #F9FAFB;
+    }
     [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
         font-size: 1.1rem;
         font-weight: 600;
