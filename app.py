@@ -24,6 +24,14 @@ import plotly.graph_objects as go
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+
+# ============================================================
+# DEMO MODE フラグ
+# True: ポートフォリオ用のサンプルタイル UI を表示（Streamlit Cloud デプロイ版）
+# False: 通常版（Windows バンドル等の配布版） — build_windows_bundle.py で自動的に False に書き換えられる
+# ============================================================
+DEMO_MODE = True
+
 import pandas as pd
 import streamlit as st
 
@@ -83,6 +91,35 @@ st.markdown(
     [data-testid="stFileUploaderDropzone"]:hover {
         background-color: #EDE9FE;
         border-color: #6D28D9;
+    }
+    /* サンプルタイルからドラッグ中のハイライト（iframe 越しに JS でクラスを付与） */
+    [data-testid="stFileUploaderDropzone"].tile-drag-active {
+        background-color: #DDD6FE !important;
+        border-color: #7C3AED !important;
+        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.25) !important;
+        transform: scale(1.01);
+    }
+    /* 親フレーム側のマーキー（範囲選択）の四角 */
+    .marquee-rect {
+        position: fixed;
+        background: rgba(37, 99, 235, 0.12);
+        border: 1.5px solid #2563EB;
+        pointer-events: none;
+        z-index: 10000;
+        border-radius: 1px;
+    }
+    /* 親フレーム側のマルチドラッグ件数バッジ */
+    .multi-drag-badge {
+        position: fixed;
+        background: #2563EB;
+        color: white;
+        font-weight: 700;
+        font-size: 0.7rem;
+        padding: 3px 8px;
+        border-radius: 10px;
+        pointer-events: none;
+        z-index: 10001;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.25);
     }
     [data-testid="stFileUploaderDropzoneInstructions"] > div > span {
         font-size: 1.1rem;
@@ -462,106 +499,118 @@ def _render_add_view() -> None:
 
     st.markdown("##### ➕ 新規プラットフォームの追加")
 
-    auto_csv_new = st.file_uploader(
-        "🔍 CSVをドロップで列マッピングを自動推測（オプション）",
-        type=["csv"],
-        key="auto_csv_new",
-    )
-    if (
-        auto_csv_new is not None
-        and st.session_state.get("last_auto_csv_new") != auto_csv_new.name
-    ):
-        try:
-            df_peek = pd.read_csv(auto_csv_new, nrows=0)
-            headers = list(df_peek.columns)
-            suggestions = suggest_column_mapping(headers)
-            if any(suggestions.values()):
-                st.session_state["pending_suggestions_new"] = suggestions
-                basename = auto_csv_new.name.rsplit(".", 1)[0]
-                parts = re.split(r"[_\-\.]", basename)
-                for p in parts:
-                    if p.isalpha() and len(p) >= 3:
-                        st.session_state["pending_prefix_new"] = p.lower()
-                        break
-                st.session_state["last_auto_csv_new"] = auto_csv_new.name
-                st.rerun()
-            else:
-                st.warning("⚠️ どの列も推測できませんでした。列名を確認してください。")
-        except Exception as e:
-            st.error(f"CSV読み込みエラー: {e}")
+    # [Demo only] 左側にサンプル CSV タイルを並べる
+    if DEMO_MODE:
+        _c_tiles, _c_form = st.columns([1, 5])
+        with _c_tiles:
+            from demo_features import render_dialog_sample_tiles
+            render_dialog_sample_tiles()
+        _container = _c_form
+    else:
+        _container = st.container()
 
-    with st.form("add_platform_form", clear_on_submit=False):
-        col_y, col_z, col_color = st.columns([2, 2, 1])
-        with col_y:
-            new_label = st.text_input(
-                "表示名", placeholder="例: Yahoo!ショッピング", key="new_display_label",
-            )
-        with col_z:
-            new_prefix = st.text_input(
-                "ファイル名の先頭",
-                placeholder="例: yahoo",
-                key="new_prefix",
-                help="この値が内部IDとしても使われます（英小文字推奨）",
-            )
-        with col_color:
-            # 次に追加されるプラットフォームのデフォルト色（FALLBACK_PALETTE から循環）
-            default_new_color = FALLBACK_PALETTE[
-                len(config["platforms"]) % len(FALLBACK_PALETTE)
-            ]
-            new_color = st.color_picker(
-                "色",
-                value=default_new_color,
-                key="new_color",
-                help="円グラフでの色（後から変更可）",
-            )
+    with _container:
 
-        st.markdown("**列名マッピング** — CSV側の列名を入力")
-        col_src_inputs: dict = {}
-        map_cols = st.columns(5)
-        for i, canon in enumerate(CANONICAL_COLS):
-            with map_cols[i]:
-                col_src_inputs[canon] = st.text_input(
-                    f"`{canon}` ←",
-                    placeholder=f"例: {canon}",
-                    key=f"new_col_{canon}",
-                )
-
-        st.caption("💡 自動入力した内容に問題なければ「➕ 追加する」を押してください")
-
-        submitted = st.form_submit_button(
-            "➕ 追加する", use_container_width=True, type="primary"
+        auto_csv_new = st.file_uploader(
+            "🔍 CSVをドロップで列マッピングを自動推測（オプション）",
+            type=["csv"],
+            key="auto_csv_new",
         )
-        if submitted:
-            if not new_label or not new_prefix:
-                st.error("表示名・ファイル名先頭は必須です")
-            elif new_prefix.strip() in config["platforms"]:
-                st.error(
-                    f"ファイル名先頭 '{new_prefix.strip()}' は既に使われています。別の名前を入れてください。"
+        if (
+            auto_csv_new is not None
+            and st.session_state.get("last_auto_csv_new") != auto_csv_new.name
+        ):
+            try:
+                df_peek = pd.read_csv(auto_csv_new, nrows=0)
+                headers = list(df_peek.columns)
+                suggestions = suggest_column_mapping(headers)
+                if any(suggestions.values()):
+                    st.session_state["pending_suggestions_new"] = suggestions
+                    basename = auto_csv_new.name.rsplit(".", 1)[0]
+                    parts = re.split(r"[_\-\.]", basename)
+                    for p in parts:
+                        if p.isalpha() and len(p) >= 3:
+                            st.session_state["pending_prefix_new"] = p.lower()
+                            break
+                    st.session_state["last_auto_csv_new"] = auto_csv_new.name
+                    st.rerun()
+                else:
+                    st.warning("⚠️ どの列も推測できませんでした。列名を確認してください。")
+            except Exception as e:
+                st.error(f"CSV読み込みエラー: {e}")
+
+        with st.form("add_platform_form", clear_on_submit=False):
+            col_y, col_z, col_color = st.columns([2, 2, 1])
+            with col_y:
+                new_label = st.text_input(
+                    "表示名", placeholder="例: Yahoo!ショッピング", key="new_display_label",
                 )
-            elif any(not v.strip() for v in col_src_inputs.values()):
-                st.error("5つの列名すべてを入力してください")
-            else:
-                # ファイル名先頭をそのまま内部キーとして使用
-                internal_key = new_prefix.strip()
-                config["platforms"][internal_key] = {
-                    "filename_prefix": new_prefix.strip(),
-                    "label": new_label.strip(),
-                    "color": new_color,
-                    "columns": {v.strip(): k for k, v in col_src_inputs.items()},
-                }
-                save_config(config)
-                st.success(f"{new_label} を追加しました ✓")
-                # クリア
-                for canon in CANONICAL_COLS:
-                    st.session_state.pop(f"new_col_{canon}", None)
-                st.session_state.pop("new_display_label", None)
-                st.session_state.pop("new_prefix", None)
-                st.session_state.pop("new_color", None)
-                st.session_state.pop("last_auto_csv_new", None)
-                # ダイアログを閉じて、メイン画面に戻る（次回開いたら一覧から）
-                st.session_state["settings_view"] = "list"
-                st.session_state["settings_dialog_open"] = False
-                st.rerun()
+            with col_z:
+                new_prefix = st.text_input(
+                    "ファイル名の先頭",
+                    placeholder="例: yahoo",
+                    key="new_prefix",
+                    help="この値が内部IDとしても使われます（英小文字推奨）",
+                )
+            with col_color:
+                # 次に追加されるプラットフォームのデフォルト色（FALLBACK_PALETTE から循環）
+                default_new_color = FALLBACK_PALETTE[
+                    len(config["platforms"]) % len(FALLBACK_PALETTE)
+                ]
+                new_color = st.color_picker(
+                    "色",
+                    value=default_new_color,
+                    key="new_color",
+                    help="円グラフでの色（後から変更可）",
+                )
+
+            st.markdown("**列名マッピング** — CSV側の列名を入力")
+            col_src_inputs: dict = {}
+            map_cols = st.columns(5)
+            for i, canon in enumerate(CANONICAL_COLS):
+                with map_cols[i]:
+                    col_src_inputs[canon] = st.text_input(
+                        f"`{canon}` ←",
+                        placeholder=f"例: {canon}",
+                        key=f"new_col_{canon}",
+                    )
+
+            st.caption("💡 自動入力した内容に問題なければ「➕ 追加する」を押してください")
+
+            submitted = st.form_submit_button(
+                "➕ 追加する", use_container_width=True, type="primary"
+            )
+            if submitted:
+                if not new_label or not new_prefix:
+                    st.error("表示名・ファイル名先頭は必須です")
+                elif new_prefix.strip() in config["platforms"]:
+                    st.error(
+                        f"ファイル名先頭 '{new_prefix.strip()}' は既に使われています。別の名前を入れてください。"
+                    )
+                elif any(not v.strip() for v in col_src_inputs.values()):
+                    st.error("5つの列名すべてを入力してください")
+                else:
+                    # ファイル名先頭をそのまま内部キーとして使用
+                    internal_key = new_prefix.strip()
+                    config["platforms"][internal_key] = {
+                        "filename_prefix": new_prefix.strip(),
+                        "label": new_label.strip(),
+                        "color": new_color,
+                        "columns": {v.strip(): k for k, v in col_src_inputs.items()},
+                    }
+                    save_config(config)
+                    st.success(f"{new_label} を追加しました ✓")
+                    # クリア
+                    for canon in CANONICAL_COLS:
+                        st.session_state.pop(f"new_col_{canon}", None)
+                    st.session_state.pop("new_display_label", None)
+                    st.session_state.pop("new_prefix", None)
+                    st.session_state.pop("new_color", None)
+                    st.session_state.pop("last_auto_csv_new", None)
+                    # ダイアログを閉じて、メイン画面に戻る（次回開いたら一覧から）
+                    st.session_state["settings_view"] = "list"
+                    st.session_state["settings_dialog_open"] = False
+                    st.rerun()
 
 
 def _render_raw_view() -> None:
@@ -614,6 +663,14 @@ with col_gear:
 # ダイアログ表示制御：フラグがTrueならダイアログを呼び出す（毎再実行時にチェック）
 if st.session_state.get("settings_dialog_open", False):
     show_settings_dialog()
+
+
+# ============================================================
+# サンプルデータタイル（Demo only） — demo_features.py からインポート
+# ============================================================
+if DEMO_MODE:
+    from demo_features import render_main_sample_tiles
+    render_main_sample_tiles(config)
 
 
 # ============================================================

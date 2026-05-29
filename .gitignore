@@ -19,3 +19,13 @@ docs/tables.md
 
 # Streamlit のローカル設定
 .streamlit/secrets.toml
+
+# Windows バンドル（生成物・サイズ大、配布は zip 別配信）
+windows_bundle/
+*.zip
+
+# Claude Code のローカル設定
+.claude/
+
+# Stlite 検証用の実験フォルダ（結局 Pattern A 採用で見送り）
+stlite_test/
