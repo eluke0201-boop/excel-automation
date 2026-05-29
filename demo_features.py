@@ -824,5 +824,6 @@ def render_dialog_sample_tiles() -> None:
     </body>
     </html>
     """
-    height = 80 + len(files) * 78
+    # 1タイル ≒ 95px（アイコン40 + 名前2行 + メタ + 余白）、ヘッダ75 + 余白25
+    height = 100 + len(files) * 95
     st.components.v1.html(html, height=height)
